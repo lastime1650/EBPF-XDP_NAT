@@ -98,7 +98,7 @@ static __always_inline bool is_local_ip(__u32 ip) {
 // ============================================================
 
 // [DNAT] 외부 -> 내부
-static __always_inline bool Set_DNAT(struct ethhdr *eth, struct iphdr* ip, struct NAT_TABLE_value_by_private* nat, void *data_end)
+static __always_inline bool Set_DNAT(struct ethhdr *eth, struct iphdr* ip, struct NAT_TABLE_value_by_private* nat, struct interfaceinfo *lan_info, void *data_end)
 {
     if ((void*)(ip + 1) > data_end) return false;
 
@@ -123,7 +123,6 @@ static __always_inline bool Set_DNAT(struct ethhdr *eth, struct iphdr* ip, struc
     csum_replace4((__u16*)&ip->check, old_daddr, new_daddr);
     ip->daddr = new_daddr;
 
-    struct interfaceinfo *lan_info = get_interface_info(nat->private_ifindex);
     if (lan_info) {
         __builtin_memcpy(eth->h_source, lan_info->mac_addr, 6);
         __builtin_memcpy(eth->h_dest, nat->host_mac, 6);
@@ -137,8 +136,12 @@ static __always_inline bool process_snat_and_update_map(
     struct xdp_md *ctx, 
     struct ethhdr *eth, 
     struct iphdr* ip, 
+    __u16* src_port,
+    __u16* dst_port,
     struct interfaceinfo *wan_info, 
-    void *data_end)
+    struct Network_event *e,
+    void *data_end
+)
 {
     if ((void*)(ip + 1) > data_end) return false;
 
@@ -147,38 +150,18 @@ static __always_inline bool process_snat_and_update_map(
     void *l4_hdr = (void *)ip + (ip->ihl * 4);
     if (l4_hdr > data_end) return false;
 
-    __u16 src_port = 0;
-    __u16 dst_port = 0;
-
-    if (ip->protocol == IPPROTO_TCP) {
-        struct tcphdr *tcp = l4_hdr;
-        if ((void *)(tcp + 1) > data_end) return false;
-        src_port = tcp->source; 
-        dst_port = tcp->dest;
-    } else if (ip->protocol == IPPROTO_UDP) {
-        struct udphdr *udp = l4_hdr;
-        if ((void *)(udp + 1) > data_end) return false;
-        src_port = udp->source;
-        dst_port = udp->dest;
-    } else if (ip->protocol == IPPROTO_ICMP) {
-        struct icmphdr *icmp = l4_hdr;
-        if ((void *)(icmp + 1) > data_end) return false;
-        if (icmp->type != ICMP_ECHO) return false;
-        src_port = icmp->un.echo.id; 
-        dst_port = 0; 
-    } else {
-        return false; 
-    }
+    //__u16 src_port = 0;
+    //__u16 dst_port = 0;
 
     struct NAT_TABLE_key_by_external key = {};
     key.external_ipv4 = ip->daddr;       
-    key.external_port = bpf_ntohs(dst_port); 
-    key.internal_port = bpf_ntohs(src_port); 
+    key.external_port = bpf_ntohs(*dst_port); 
+    key.internal_port = bpf_ntohs(*src_port); 
     key.protocol_number = ip->protocol;
 
     struct NAT_TABLE_value_by_private value = {};
     value.private_ipv4 = ip->saddr;
-    value.private_port = bpf_ntohs(src_port);
+    value.private_port = bpf_ntohs(*src_port);
     value.protocol_number = ip->protocol;
     value.private_ifindex = ctx->ingress_ifindex;
     __builtin_memcpy(value.host_mac, eth->h_source, 6); 

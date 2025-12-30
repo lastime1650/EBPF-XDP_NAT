@@ -6,7 +6,7 @@
 #define true 1
 #define false 0
 
-#define MAX_PKT_SIZE 1512
+#define MAX_PKT_SIZE 9120
 #define CHUNK_SIZE 256
 
 // 인터페이스 정보 (IP, MAC, Gateway 등)
@@ -44,27 +44,20 @@ struct NAT_TABLE_value_by_private
 } __attribute__((packed));
 
 // 링버퍼 이벤트 구조체
+// IP, port 는 빅엔디언이므로, 유저에서 처리진행
 struct Network_event {
     int ifindex;
     unsigned int pkt_len;
     int version; 
     int protocol;
-    char macSrc[18];
-    char macDst[18];
-    unsigned char ipSrc[40]; 
+    unsigned char macSrc[6];
+    unsigned char macDst[6];
+    unsigned int ipSrc; 
     unsigned int portSrc;
-    unsigned char ipDst[40];
+    unsigned int ipDst;
     unsigned int portDst;
     bool is_wan;
     int is_internal_going_to_internet; 
-
-    struct
-    {
-        unsigned int source_ipv4;
-        unsigned int destination_ipv4;
-        unsigned short source_port;
-        unsigned short destination_port;
-    } original;
 
     unsigned char RawPacket[MAX_PKT_SIZE];
 } __attribute__((packed));

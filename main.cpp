@@ -902,7 +902,6 @@ int main()
 }
 */
 
-
 // C++ Standard Library
 #include <iostream>
 #include <fstream>
@@ -940,9 +939,9 @@ int main()
 
 // eBPF / libbpf
 extern "C" {
-#include <bpf/libbpf.h>
-#include <bpf/bpf.h>
-#include "ebpf/xdp_prog.skel.h"
+    #include <bpf/libbpf.h>
+    #include <bpf/bpf.h>
+    #include "ebpf/xdp_prog.skel.h"
 }
 
 
@@ -984,22 +983,17 @@ struct NAT_TABLE_value_by_private {
 struct Network_event {
     int ifindex;
     unsigned int pkt_len;
-    int version; 
+    int version;
     int protocol;
-    char macSrc[18];
-    char macDst[18];
-    unsigned char ipSrc[40]; 
+    unsigned char macSrc[6];
+    unsigned char macDst[6];
+    unsigned int ipSrc;
     unsigned int portSrc;
-    unsigned char ipDst[40];
+    unsigned int ipDst;
     unsigned int portDst;
-    bool_t is_wan;
-    int is_internal_going_to_internet; 
-    struct {
-        unsigned int source_ipv4;
-        unsigned int destination_ipv4;
-        unsigned short source_port;
-        unsigned short destination_port;
-    } original;
+    bool is_wan;
+    int is_internal_going_to_internet;
+
     unsigned char RawPacket[MAX_PKT_SIZE];
 } __attribute__((packed));
 
@@ -1163,9 +1157,78 @@ private:
     }
 };
 
+
+struct Network_event_readable {
+    int ifindex;
+    unsigned int pkt_len;
+    int version;
+    int protocol;
+    std::string macSrc;
+    std::string macDst;
+    std::string ipSrc;
+    unsigned int portSrc;
+    std::string ipDst;
+    unsigned int portDst;
+    bool is_wan;
+    int is_internal_going_to_internet;
+};
+
+static Network_event_readable make_readable(const Network_event &ev)
+{
+    Network_event_readable r{};
+    char buf[64];
+
+    r.ifindex = ev.ifindex;
+    r.pkt_len = ev.pkt_len;
+    r.version = ev.version;
+    r.protocol = ev.protocol;
+
+    // MAC 주소: XX:XX:XX:XX:XX:XX 형식 (대문자, 콜론 구분)
+    std::snprintf(buf, sizeof(buf),
+        "%02X:%02X:%02X:%02X:%02X:%02X",
+        ev.macSrc[0], ev.macSrc[1], ev.macSrc[2],
+        ev.macSrc[3], ev.macSrc[4], ev.macSrc[5]);
+    r.macSrc = buf;
+
+    std::snprintf(buf, sizeof(buf),
+        "%02X:%02X:%02X:%02X:%02X:%02X",
+        ev.macDst[0], ev.macDst[1], ev.macDst[2],
+        ev.macDst[3], ev.macDst[4], ev.macDst[5]);
+    r.macDst = buf;
+
+    // IPv4 주소: dotted-decimal notation (제로 패딩 제거)
+    // ev.ipSrc는 네트워크 바이트 오더(빅엔디안)로 가정
+    struct in_addr addr_src;
+    addr_src.s_addr = ev.ipSrc;
+    inet_ntop(AF_INET, &addr_src, buf, sizeof(buf));
+    r.ipSrc = buf;
+
+    struct in_addr addr_dst;
+    addr_dst.s_addr = ev.ipDst;
+    inet_ntop(AF_INET, &addr_dst, buf, sizeof(buf));
+    r.ipDst = buf;
+
+    r.portSrc = ev.portSrc;
+    r.portDst = ev.portDst;
+    r.is_wan = ev.is_wan;
+    r.is_internal_going_to_internet = ev.is_internal_going_to_internet;
+
+    return r;
+}
+
 static bool running = true;
 static void sigint(int) { running = false; }
-static int handle_event(void *ctx, void *data, size_t len) { return 0; }
+static int handle_event(void *ctx, void *data, size_t len) { 
+
+    Network_event* event = (Network_event*)data;
+    if(!event) return 0;
+
+    auto readable_event = make_readable(*event);
+
+    std::cout << readable_event.ipSrc << " -> " << readable_event.ipDst << std::endl;
+
+    return 0;
+}
 
 int main()
 {
@@ -1225,7 +1288,7 @@ int main()
 
     std::cout << "Running...\n";
     while (running) {
-        ring_buffer__poll(rb, 100);
+        ring_buffer__poll(rb, 5);
     }
 
     std::cout << "Stopping...\n";
@@ -1236,3 +1299,4 @@ int main()
     xdp_prog_bpf__destroy(skel);
     return 0;
 }
+
