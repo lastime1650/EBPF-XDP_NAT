@@ -945,7 +945,7 @@ extern "C" {
 }
 
 
-#define MAX_PKT_SIZE 1512
+#define MAX_PKT_SIZE 9000
 typedef __u8 bool_t; 
 
 struct interfaceinfo {
