@@ -10,7 +10,7 @@
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 24); 
+    __uint(max_entries, 1 << 29); 
 } network_ringbuffer SEC(".maps");
 
 SEC("xdp")
@@ -52,7 +52,7 @@ int xdp_packet_handler(struct xdp_md *ctx)
     } else if (ip->protocol == IPPROTO_ICMP) {
             struct icmphdr *icmp = l4_hdr;
             if ((void *)(icmp + 1) > data_end) return XDP_PASS;
-
+            bpf_printk("ICMP!");
             if (icmp->type == ICMP_ECHO) {
                 // Ping 요청 (LAN -> WAN): ID는 Source 식별자
                 src_port = icmp->un.echo.id;
@@ -92,40 +92,31 @@ int xdp_packet_handler(struct xdp_md *ctx)
     e->portDst = (dst_port);
 
     
+    // resovled Problem --> 계속 패킷 버퍼가 Ringbuffer 로 복사되지 않은 문제점으로 인하여 XDP 전용 함수 사용을 하여 해결.
+    // -> https://docs.ebpf.io/linux/helper-function/bpf_xdp_get_buff_len/ 접근하여 훑어보기
     // 패킷 버퍼
-    // 패킷 버퍼 (verifier-safe)
-    __u32 copylen = pkt_len;
-    if (copylen > MAX_PKT_SIZE)
+    // [개선 1] 포인터 연산 대신 전용 XDP 인자 포인터 크기 가져오는 함수 사용
+    __u64 full_len = bpf_xdp_get_buff_len(ctx);
+    
+    // __u64를 __u32로 캐스팅
+    __u32 copylen = (__u32)full_len;
+
+    // 최대 복사 길이 제한
+    if (copylen > MAX_PKT_SIZE) {
         copylen = MAX_PKT_SIZE;
-
-    // CHUNK 단위 복사 (완전 unroll + 정적 인덱스)
-    #pragma unroll
-    for (int i = 0; i < (MAX_PKT_SIZE / CHUNK_SIZE); i++) {
-        int off = i * CHUNK_SIZE;
-
-        if (off >= copylen)
-            break;
-
-        if ((void *)((char *)data + off + CHUNK_SIZE) > data_end)
-            break;
-
-        __builtin_memcpy(&e->RawPacket[off],
-                        (char *)data + off,
-                        CHUNK_SIZE);
     }
 
-    // 남은 바이트 복사 (최대 CHUNK_SIZE 미만, 정적 인덱스)
-    #pragma unroll
-    for (int j = 0; j < CHUNK_SIZE; j++) {
-        int off = (MAX_PKT_SIZE / CHUNK_SIZE) * CHUNK_SIZE + j;
+    //  Verifier에게 "이 변수는 절대 음수가 아니다"라고 강제 주입
+    copylen &= 0x7FF;
 
-        if (off >= copylen)
-            break;
-
-        if ((void *)((char *)data + off + 1) > data_end)
-            break;
-
-        e->RawPacket[off] = ((char *)data)[off];
+    // 개선! XDP전용함수 -> bpf_xdp_load_bytes 호출
+    // copylen이 0인 경우 호출 방지 (불필요한 오버헤드 및 잠재적 에러 방지)
+    if (copylen > 0) {
+        long ret = bpf_xdp_load_bytes(ctx, 0, e->RawPacket, copylen);
+        if (ret < 0) {
+            bpf_printk("Load failed: %ld\n", ret);
+            // 필요 시 에러 처리 (예: e->pkt_len = 0 등)
+        }
     }
 
 

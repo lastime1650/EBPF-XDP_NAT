@@ -1216,6 +1216,44 @@ static Network_event_readable make_readable(const Network_event &ev)
     return r;
 }
 
+
+static inline void parseAndPrintICMP_(const unsigned char* data, size_t len)
+{
+    if (len < 14 + 20) return; // Ethernet + IPv4 최소 길이
+
+    // Ethernet
+    uint16_t ethType = (data[12] << 8) | data[13];
+    if (ethType != 0x0800) return; // IPv4 아님
+
+    // IPv4
+    const unsigned char* ip = data + 14;
+    uint8_t ihl = (ip[0] & 0x0F) * 4;
+    if (ihl < 20 || len < 14 + ihl) return;
+
+    if (ip[9] != 1) return; // ICMP 아님
+
+    // src / dst IP
+    char srcIp[INET_ADDRSTRLEN];
+    char dstIp[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, ip + 12, srcIp, sizeof(srcIp));
+    inet_ntop(AF_INET, ip + 16, dstIp, sizeof(dstIp));
+
+    // ICMP
+    const unsigned char* icmp = ip + ihl;
+    if (len < 14 + ihl + 4) return;
+
+    uint8_t icmpType = icmp[0];
+    uint8_t icmpCode = icmp[1];
+
+    std::cout
+        << "ICMP packet "
+        << "src=" << srcIp
+        << " dst=" << dstIp
+        << " type=" << (int)icmpType
+        << " code=" << (int)icmpCode
+        << std::endl;
+}
+
 static bool running = true;
 static void sigint(int) { running = false; }
 static int handle_event(void *ctx, void *data, size_t len) { 
@@ -1223,9 +1261,10 @@ static int handle_event(void *ctx, void *data, size_t len) {
     Network_event* event = (Network_event*)data;
     if(!event) return 0;
 
-    auto readable_event = make_readable(*event);
-
-    std::cout << readable_event.ipSrc << " -> " << readable_event.ipDst << std::endl;
+    parseAndPrintICMP_(
+        event->RawPacket,
+        event->pkt_len
+    );
 
     return 0;
 }
@@ -1288,7 +1327,7 @@ int main()
 
     std::cout << "Running...\n";
     while (running) {
-        ring_buffer__poll(rb, 5);
+        ring_buffer__poll(rb, 10);
     }
 
     std::cout << "Stopping...\n";

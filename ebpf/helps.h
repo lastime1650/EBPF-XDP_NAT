@@ -6,7 +6,7 @@
 #define true 1
 #define false 0
 
-#define MAX_PKT_SIZE 9120
+#define MAX_PKT_SIZE 9000
 #define CHUNK_SIZE 256
 
 // 인터페이스 정보 (IP, MAC, Gateway 등)

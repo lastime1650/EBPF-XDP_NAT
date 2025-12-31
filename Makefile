@@ -11,7 +11,7 @@ USER_SRC  = main.cpp
 USER_BIN  = xdp_user
 
 BPF_CFLAGS  = -O2 -g -target bpf
-USER_CFLAGS = -O2 -g
+USER_CFLAGS = -std=c++20 -Wall -O0 -g
 USER_LIBS   = -lbpf -lelf -lz
 
 .PHONY: all clean
