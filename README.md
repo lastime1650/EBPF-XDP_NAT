@@ -17,7 +17,7 @@ NIC에 가장 가까운 **XDP (eXpress Data Path)** 영역에서 직접 패킷�
 ## 이를 통해 증명하는 사항
 
 1. **TC FILTER에서 발생하는 skb 생성 지연 없음**
-2. **iptables / firewalld 불필요** (NAT 설정 시 포함)
+2. **iptables / firewalld 불필요** (유저레벨 NAT 설정 시에는 예외.)
 3. **NIC 이후, 커널 최상단 위치에서 즉시 포워딩**
 
    * 유저모드
@@ -25,7 +25,7 @@ NIC에 가장 가까운 **XDP (eXpress Data Path)** 영역에서 직접 패킷�
      → 일절 간섭 없음
 4. **매우 빠른 패킷 포워딩 성능**
 
-## 활용 가능 기능
+## 기능
 
 * XDP 기반 **고속 로깅**
 * XDP 기반 **고속 차단 (Drop)**
